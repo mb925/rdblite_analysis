@@ -5,10 +5,11 @@ import ast
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 import pandas as pd
 import json
+import config as cfg
 
 # create input.txt file from entries
 def create_input_txt():
-    f = open('./entries.mjson')
+    f = open(cfg.data['data'] + '/entries.json')
     data = json.load(f)
     pdb_list = []
     for i in data:
@@ -20,7 +21,7 @@ def create_input_txt():
     print(pdb_list)
     pdb_list = set(pdb_list)
 
-    with open('../RepeatsDB-Lite/input.txt', 'a') as the_file:
+    with open(cfg.data['data'] + 'input.txt', 'a') as the_file:
         for el in pdb_list:
             the_file.write(el[0:4] + ' ' + el[4] + '\n')
 
@@ -58,7 +59,7 @@ def intersections(a,b):
 def parse_curated_to_dict():
     print('entries dict')
     dict_curated = {}
-    f = open('./entries.json')
+    f = open(cfg.data['data'] + 'entries.json')
     data = json.load(f)
     for i in data:
         if i["repeatsdb_id"] in dict_curated:
@@ -71,7 +72,7 @@ def parse_curated_to_dict():
 def parse_predicted_to_dict():
     print('predicted dict')
     dict_predicted = {}
-    data = pd.read_csv('results.csv', sep=',')
+    data = pd.read_csv(cfg.data['data'] + '/results.csv', sep=',')
 
     for i in data.iterrows():
         if i[1][2] == 'no regions':
@@ -85,7 +86,7 @@ def parse_predicted_to_dict():
     return dict_predicted
 
 def calculate_overlap(curated, predicted):
-    with open('analysis.csv', 'a') as the_file:
+    with open(cfg.data['data'] + '/analysis.csv', 'a') as the_file:
         the_file.write('PDB' + ',' + 'OVERLAP' + '\n')
         for key in curated:
             if key in predicted:
@@ -106,35 +107,37 @@ def count_residues(deltas):
     return d
 
 def average():
-    data = pd.read_csv('analysis.csv', sep=',')
+    data = pd.read_csv(cfg.data['data'] + '/analysis.csv', sep=',')
     mean = data["OVERLAP"].mean()
     print(mean)
 
-def curated_to_dict_classes():
+def curated_to_dict_classes(level):
     print('entries dict')
     dict_curated = {}
-    f = open('./entries.json')
+    f = open(cfg.data['data'] + '/entries.json')
     data = json.load(f)
     for i in data:
         if i["repeatsdb_id"] in dict_curated:
-            dict_curated[i["repeatsdb_id"]].append(i['class'])
+            dict_curated[i["repeatsdb_id"]].append(i[level])
         if i["repeatsdb_id"] not in dict_curated:
             dict_curated[i["repeatsdb_id"]] = []
-            dict_curated[i["repeatsdb_id"]].append(i['class'])
+            dict_curated[i["repeatsdb_id"]].append(i[level])
     return dict_curated
 
-def predicted_to_dict_classes():
+def predicted_to_dict_classes(level):
     print('predicted dict')
     dict_predicted = {}
-    data = pd.read_csv('results.csv', sep=',')
+    data = pd.read_csv(cfg.data['data'] + '/results.csv', sep=',')
 
-    ontology = pd.read_csv('ontology.csv', sep=',')
-    print(ontology)
+    ontology = pd.read_csv(cfg.data['data'] + '/ontology.csv', sep=',')
     for i in data.iterrows():
         if i[1][2] == 'no regions':
             continue
-        cl = i[1][4] # convert in number
+        cl = i[1][level] # convert in number
+        print(cl)
         cl_name = ontology.loc[ontology['Name'].str.contains(cl)]['Code'].to_string(index=False)
+        print(cl_name)
+
 
         if i[1][0] in dict_predicted:
             dict_predicted[i[1][0]].append(cl_name)
@@ -145,25 +148,37 @@ def predicted_to_dict_classes():
 
 
 def compare_classes(curated, predicted):
-    with open('analysis_classes.csv', 'a') as the_file:
-        the_file.write('PDB' + ',' + 'CLASS' + '\n')
-
+    with open(cfg.data['data'] + '/analysis_classes.csv', 'a') as the_file:
         for key in curated:
             if key in predicted:
-
-                print(len(set(curated[key]) & set(predicted[key])))
+                # print(len(set(curated[key]) & set(predicted[key])))
                 the_file.write(key + ',' + str(len(set(curated[key]) & set(predicted[key]))) + '\n')
                 # print(list(set(set(curated[key])).intersection(set(predicted[key]))))
 
-def count_classes():
-    data = pd.read_csv('analysis_classes.csv', sep=',')
+def count_classes(level):
+    data = pd.read_csv(cfg.data['data'] + '/analysis_classes.csv', sep=',')
     # print(data.loc[data["CLASS"] == 1])
-    count = len(data.loc[data["CLASS"] >= 1]) / len(data)
-    print(count)
+    count = len(data.loc[data[level] >= 1]) / len(data)
+    print(level, count)
+
+def classes_analysis():
+    with open(cfg.data['data'] + '/analysis_classes.csv', 'w') as the_file:
+        # the_file.write('PDB' + ',' + 'CLASS' + ',' + 'TOPOLOGY' + ',' + 'FOLD' + '\n')
+        the_file.write('PDB' + ',' + 'TOPOLOGY' + '\n')
+        # check class
+    # dict_curated_classes = curated_to_dict_classes('class')
+    # dict_predicted_classes = predicted_to_dict_classes(4)
+    # compare_classes(dict_curated_classes, dict_predicted_classes)
+    # count_classes('CLASS')
+    a = curated_to_dict_classes('class_topology')
+    b = predicted_to_dict_classes(5)
+    compare_classes(a, b)
+    count_classes('TOPOLOGY')
+
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    # create_input_txt()
+    create_input_txt()
 
     # check overlap
     # dict_curated = parse_curated_to_dict()
@@ -172,11 +187,7 @@ if __name__ == '__main__':
     # calculate_overlap(dict_curated, dict_predicted)
     # average()
 
-    # check class
-    # dict_curated_classes = curated_to_dict_classes()
-    # dict_predicted_classes = predicted_to_dict_classes()
-    # compare_classes(dict_curated_classes, dict_predicted_classes)
-    count_classes()
+    # classes_analysis()
 
 
 

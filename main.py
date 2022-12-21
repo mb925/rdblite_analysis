@@ -21,7 +21,7 @@ def create_input_txt():
     print(pdb_list)
     pdb_list = set(pdb_list)
 
-    with open(cfg.data['data'] + 'input.txt', 'a') as the_file:
+    with open(cfg.data['data'] + '/input.txt', 'a') as the_file:
         for el in pdb_list:
             the_file.write(el[0:4] + ' ' + el[4] + '\n')
 

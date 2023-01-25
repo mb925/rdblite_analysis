@@ -11,43 +11,18 @@ def count_not_trp():
     rdb1 = pd.read_csv(cfg.data['data'] + '/rpdblite1_predictions.tsv', sep='\t', names=["PDB", "TYPE", "START", "END"])
     topologies = pd.read_csv(cfg.data['data'] + '/analysis_pdbs.csv', sep=',', dtype={'topologies': str})[['PDB', 'topologies']]
 
-    mcc = pd.read_csv(cfg.data['data'] + '/particular_cases/mcc_0.csv', sep=',')
-    mcc_merged = rdb2.merge(mcc, how='right', on='PDB')
+    f1 = pd.read_csv(cfg.data['data'] + '/particular_cases/f1_0.5.csv', sep=',')
+    f1_merged = rdb2.merge(f1, how='right', on='PDB')
 
     # rdblite2
     df2 = pd.DataFrame()
     detected2 = []
-    for i in mcc_merged.iterrows():
+    for i in f1_merged.iterrows():
         if i[1][2] == 'no regions':
             detected2.append('Not detected')
         else:
             detected2.append('Detected')
     df2['Detection'] = detected2
-
-    fig2 = go.Figure()
-    fig2.add_trace(go.Bar(
-        y=['Tandem repeat'],
-        x=[len(df2.loc[df2['Detection'] == 'Detected'])],
-        name='Detected',
-        orientation='h',
-        marker=dict(
-            color='rgba(246, 78, 139, 0.6)',
-            line=dict(color='rgba(246, 78, 139, 1.0)', width=3)
-        )
-    ))
-    fig2.add_trace(go.Bar(
-        y=['Tandem repeat'],
-        x=[len(df2.loc[df2['Detection'] == 'Not detected'])],
-        name='Not detected',
-        orientation='h',
-        marker=dict(
-            color='rgba(58, 71, 80, 0.6)',
-            line=dict(color='rgba(58, 71, 80, 1.0)', width=3)
-        )
-    ))
-
-    fig2.update_layout(barmode='stack', height=300, title="mcc 0 - Repeatsdb-lite2")
-    fig2.write_image(cfg.data['plots'] + "/particular_cases/mcc_0 - Repeatsdb-lite2.png")
 
     # rdblite1
     df1 = pd.DataFrame()
@@ -61,7 +36,7 @@ def count_not_trp():
         pdb = pdb[3:]
         rdb1_values.append(pdb)
 
-    for mc in mcc.iterrows():
+    for mc in f1.iterrows():
         if mc[1]['PDB'] in rdb1_values:
             rdb1_pdbs.append(mc[1]['PDB'])
             detected1.append('Detected')
@@ -75,41 +50,32 @@ def count_not_trp():
 
     topologies_sorted = df1_classes.sort_values(by=['topologies'], ascending=True)
     topologies = list(topologies_sorted['topologies'].drop_duplicates().values)
-
     counts = topologies_sorted.groupby(['topologies', 'Detection'])['topologies'].size().reset_index(name='counts')
+
+    fig1 = go.Figure(data =[go.Table(header=dict(values=['Tool','Detected', 'Not detected', 'Total PDBs']),
+    cells = dict(values=[['Repeatsdb-lite1', 'Repeatsdb-lite2'],
+                         [len(df1.loc[df1['Detection'] == 'Detected']),
+                         len(df2.loc[df2['Detection'] == 'Detected'])],
+                         [len(df1.loc[df1['Detection'] == 'Not detected']),
+                         len(df2.loc[df2['Detection'] == 'Not detected'])],
+                          [len(df1), len(df2)]
+                          ]
+
+                 ))
+    ])
+
+    fig1.update_layout(title="F-score < 0.5")
+    fig1.write_image(cfg.data['plots'] + "/particular_cases/f1_0.5.png")
+
+
 
     fig1 = go.Figure(data=[
         go.Bar(name='Not detected', x=topologies, y=list(counts.loc[counts['Detection'] == 'Not detected']['counts'])),
         go.Bar(name='Detected', x=topologies, y=list(counts.loc[counts['Detection'] == 'Detected']['counts']))
     ])
     # Change the bar mode
-    fig1.update_layout(barmode='stack', title="mcc 0 - Repeatsdb-lite1")
-    fig1.write_image(cfg.data['plots'] + "/particular_cases/mcc_0 - topologies - Repeatsdb-lite1.png")
-
-    fig1 = go.Figure()
-    fig1.add_trace(go.Bar(
-        y=['Tandem repeat units'],
-        x=[len(df1.loc[df1['Detection'] == 'Detected'])],
-        name='Detected',
-        orientation='h',
-        marker=dict(
-            color='rgba(246, 78, 139, 0.6)',
-            line=dict(color='rgba(246, 78, 139, 1.0)', width=3)
-        )
-    ))
-    fig1.add_trace(go.Bar(
-        y=['Tandem repeat units'],
-        x=[len(df1.loc[df1['Detection'] == 'Not detected'])],
-        name='Not detected',
-        orientation='h',
-        marker=dict(
-            color='rgba(58, 71, 80, 0.6)',
-            line=dict(color='rgba(58, 71, 80, 1.0)', width=3)
-        )
-    ))
-
-    fig1.update_layout(barmode='stack', height=300, title="mcc 0 - Repeatsdb-lite1")
-    fig1.write_image(cfg.data['plots'] + "/particular_cases/mcc_0 - Repeatsdb-lite1.png")
+    fig1.update_layout(barmode='stack', title="F-score - Repeatsdb-lite1")
+    fig1.write_image(cfg.data['plots'] + "/particular_cases/f1_0.5 - topologies - Repeatsdb-lite1.png")
 
 
 

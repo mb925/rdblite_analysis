@@ -40,10 +40,15 @@ def table_class_topology():
     data = pd.DataFrame.from_records(data)
     data = data.loc[data['class'] != ""]
     data = pd.merge(data, pdbs_list, on=['pdb_id', 'pdb_chain'], how='right')
-    df = data.groupby(['repeatsdb_id','class_topology'])['class_topology'].size().reset_index(name='counts')
-    df = df.groupby(['class_topology']).size().reset_index(name='counts')
-    df_classes = data.groupby(['repeatsdb_id','class'])['class'].size().reset_index(name='counts')
-    df_classes = df_classes.groupby(['class']).size().reset_index(name='counts')
+
+    # pdb chains
+    pdbs_top = data.groupby(['repeatsdb_id','class_topology'])['class_topology'].size().reset_index(name='counts')
+    pdbs_top = pdbs_top.groupby(['class_topology']).size().reset_index(name='counts')
+    pdbs_top = pdbs_top.append(pdbs_top.sum(numeric_only=True), ignore_index=True).fillna('Total')
+    pdbs_cl = data.groupby(['repeatsdb_id','class'])['class'].size().reset_index(name='counts')
+    pdbs_cl = pdbs_cl.groupby(['class']).size().reset_index(name='counts')
+    pdbs_cl = pdbs_cl.append(pdbs_cl.sum(numeric_only=True), ignore_index=True).fillna('Total')
+
     # regions
     regions_top = data.groupby(['region_id','class_topology'])['class_topology'].size().reset_index(name='regions_count')
     regions_top = regions_top.groupby(['class_topology']).size().reset_index(name='regions_count')
@@ -61,46 +66,57 @@ def table_class_topology():
 
     # avg_units_len
     avg_units_top = units.groupby(['class_topology'])['region_average_unit_length'].mean().astype(int).reset_index(name='avg_units')
-    avg_units_top = avg_units_top.append(avg_units_top.sum(numeric_only=True), ignore_index=True).fillna('Total')
+    avg_units_top = avg_units_top.append(avg_units_top.mean().astype(int), ignore_index=True).fillna('Total')
     avg_units_cl = units.groupby(['class'])['region_average_unit_length'].mean().astype(int).reset_index(name='avg_units')
-    avg_units_cl = avg_units_cl.append(avg_units_cl.sum(numeric_only=True), ignore_index=True).fillna('Total')
+    avg_units_cl = avg_units_cl.append(avg_units_cl.mean().astype(int), ignore_index=True).fillna('Total')
 
     # std
     std_units_top = units.groupby(['class_topology'])['region_average_unit_length'].std().astype(int).reset_index(
         name='std_units')
-    std_units_top = std_units_top.append(std_units_top.sum(numeric_only=True), ignore_index=True).fillna('Total')
+    std_units_top = std_units_top.append(std_units_top.mean().astype(int), ignore_index=True).fillna('Total')
 
     std_units_cl = units.groupby(['class'])['region_average_unit_length'].std().astype(int).reset_index(
         name='std_units')
-    std_units_cl = std_units_cl.append(std_units_cl.sum(numeric_only=True), ignore_index=True).fillna('Total')
+    std_units_cl = std_units_cl.append(std_units_cl.mean().astype(int), ignore_index=True).fillna('Total')
 
     # uniprot
-    uniprots = pd.read_csv(cfg.data['data'] + '/pdb_chain_uniprot.tsv', sep='\t')
-    # pd.merge(uniprots, b, on=['A', 'B'])
+    uniprot = pd.read_csv(cfg.data['data'] + '/pdb_chain_uniprot.tsv',  sep='\t', header=1, index_col='SP_PRIMARY').reset_index()
+    uniprot['repeatsdb_id']=uniprot['PDB'] + uniprot['CHAIN']
+    up = uniprot[['SP_PRIMARY', 'repeatsdb_id']]
+
+    uniprot_pdb = data.merge(up, how='left', on='repeatsdb_id')
+    uniprot_top = uniprot_pdb.groupby(['SP_PRIMARY','class_topology'])['class_topology'].size().reset_index(name='uniprot_counts')
+    uniprot_top = uniprot_top.groupby(['class_topology'])['class_topology'].size().reset_index(name='uniprot_counts')
+    uniprot_top = uniprot_top.append(uniprot_top.sum(numeric_only=True), ignore_index=True).fillna('Total')
+    uniprot_cl = uniprot_pdb.groupby(['SP_PRIMARY', 'class'])['class'].size().reset_index(name='uniprot_counts')
+    uniprot_cl = uniprot_cl.groupby(['class'])['class'].size().reset_index(name='uniprot_counts')
+    uniprot_cl = uniprot_cl.append(uniprot_cl.sum(numeric_only=True), ignore_index=True).fillna('Total')
 
 
-    fig = go.Figure(data=[go.Table(header=dict(values=['Topology', '# of PDB chains', '# regions', '#units', 'average units lenght', 'SD length']),
-                                   cells=dict(values=[df['class_topology'].values.tolist(),
-                                                      df['counts'].values.tolist(),
+    fig = go.Figure(data=[go.Table(header=dict(values=['Topology', '# of PDB chains', '# regions', '#units', 'average units lenght', 'SD length', '# uniprots']),
+                                   cells=dict(values=[pdbs_top['class_topology'].values.tolist(),
+                                                      pdbs_top['counts'].values.tolist(),
                                                       regions_top['regions_count'].values.tolist(),
                                                       units_top['units_count'].values.tolist(),
                                                       avg_units_top['avg_units'].values.tolist(),
-                                                      std_units_top['std_units'].values.tolist()]
+                                                      std_units_top['std_units'].values.tolist(),
+                                                      uniprot_top['uniprot_counts'].values.tolist()]
                                               ))
                           ])
-    fig.update_layout(height=650)
-    fig_classes = go.Figure(data=[go.Table(header=dict(values=['Class', '# of PDB chains', '# regions', '#units', 'average units lenght', 'SD length']),
-                                   cells=dict(values=[df_classes['class'].values.tolist(),
-                                                      df_classes['counts'].values.tolist(),
+    fig.update_layout(height=700)
+    fig_classes = go.Figure(data=[go.Table(header=dict(values=['Class', '# of PDB chains', '# regions', '#units', 'average units lenght', 'SD length', '# uniprots']),
+                                   cells=dict(values=[pdbs_cl['class'].values.tolist(),
+                                                      pdbs_cl['counts'].values.tolist(),
                                                       regions_cl['regions_count'].values.tolist(),
                                                       units_cl['units_count'].values.tolist(),
                                                       avg_units_cl['avg_units'].values.tolist(),
-                                                      std_units_cl['std_units'].values.tolist()
+                                                      std_units_cl['std_units'].values.tolist(),
+                                                      uniprot_cl['uniprot_counts'].values.tolist()
                                                       ]))
                           ])
     fig.write_image(cfg.data['plots'] + "/topologies_count.png")
     fig_classes.write_image(cfg.data['plots'] + "/classes_count.png")
-    print(df)
+    print(pdbs_top)
 
 def residues_count():
     data = pd.read_csv(cfg.data['data'] + '/binary_pdb.csv', sep=',')
@@ -201,7 +217,7 @@ def build_intervals(x):
     pdb = units.iloc[0]['PDB']
     pdb = pdb[3:].split('_')[0] + pdb[3:].split('_')[1]
     for row in units.iterrows():
-        intervals.append([row[1]['START'], row[1]['END']])
+        intervals.append([str(row[1]['START']), str(row[1]['END'])])
     return [pdb, intervals]
 
 
@@ -298,25 +314,27 @@ def calc_metrics(x):
     tp1, tn1, fp1, fn1 = hits[0], hits[1], hits[2], hits[3]
     tp2, tn2, fp2, fn2 = hits[4], hits[5], hits[6], hits[7]
 
-    d1 = (tp1 + tn1 + fp1 + fn1)
-    d2 = (tp2 + tn2 + fp2 + fn2)
-    if d1 == 0:
+    # balanced accuracy
+    se1_total = tp1 + fn1
+    se2_total = tp2 + fn2
+    sp1_total = fp1 + tn1
+    sp2_total = fp2 + tn2
+    if se1_total == 0 or sp1_total == 0:
         accuracy1 = 0
     else:
-        accuracy1 = round((tp1 + tn1) / d1, 2)
+        accuracy1 = ((tp1 / se1_total) + (tn1 / sp1_total)) / 2
 
-    if d2 == 0:
+    if se2_total == 0 or sp2_total == 0:
         accuracy2 = 0
     else:
-        accuracy2 = round((tp2 + tn2) / d2, 2)
+        accuracy2 = ((tp2 / se2_total) + (tn2 / sp2_total)) / 2
+
+
     p1_total = tp1 + fp1
     p2_total = tp2 + fp2
     r1_total = tp2 + fn2
     r2_total = tp2 + fn2
-    tf1_total = tn1 + fp1
-    tf2_total = tn2 + fp2
-    neg1_total = tn1 + fn1
-    neg2_total = tn2 + fn2
+
     if p1_total == 0:
         precision1 = 0
     else:
@@ -334,21 +352,16 @@ def calc_metrics(x):
     else:
         recall2 = round(tp2 / r2_total, 2)
 
-    if p1_total == 0 or r1_total == 0 or tf1_total == 0 or neg1_total == 0:
-        mcc1 = 0
+    if precision1 == 0 and recall1 == 0:
+        f_score1 = 0
     else:
-        mcc1 = round(((tp1 * tn1) - (fp1 * fn1)) / math.sqrt(p1_total * r1_total * tf1_total * neg1_total), 2)
-    if p2_total == 0 or r2_total == 0 or tf2_total == 0 or neg2_total == 0:
-        mcc2 = 0
+        f_score1 = 2 * ((precision1 * recall1)/(precision1+recall1))
+    if precision2 == 0 and recall2 == 0:
+        f_score2 = 0
     else:
-        mcc2 = round(((tp2 * tn2) - (fp2 * fn2)) / (math.sqrt(p2_total * r2_total * tf2_total * neg2_total)), 2)
-    if mcc2 < 0:
-        print('mcc', mcc2)
-        print(tp2 * tn2)
-        print((fp2 * fn2))
-        print(x)
+        f_score2 = 2 * ((precision2 * recall2)/(precision2+recall2))
     print(accuracy1)
-    return [accuracy1, accuracy2, precision1, precision2, recall1, recall2, mcc1, mcc2]
+    return [accuracy1, accuracy2, precision1, precision2, recall1, recall2, f_score1, f_score2]
 
 
 def calc_fractions():
@@ -373,8 +386,8 @@ def calc_fractions_pdbs():
     metrics2 = pd.DataFrame(metrics.METRICS.values.tolist()).add_prefix('m_')
     metrics2 = metrics2.join(metrics[['PDB', 'topologies']])
     metrics_final = metrics2.rename(
-        columns={'m_0': 'a1', 'm_1': 'a2', 'm_2': 'p1', 'm_3': 'p2', 'm_4': 'r1', 'm_5': 'r2', 'm_6': 'mcc1',
-                 'm_7': 'mcc2'})
+        columns={'m_0': 'a1', 'm_1': 'a2', 'm_2': 'p1', 'm_3': 'p2', 'm_4': 'r1', 'm_5': 'r2', 'm_6': 'f1',
+                 'm_7': 'f2'})
 
     metrics_final.to_csv(cfg.data['data'] + '/analysis_pdbs.csv', index=False)
 
@@ -391,23 +404,23 @@ def calc_fractions_dataset():
     metrics2 = pd.DataFrame(metrics.METRICS.values.tolist()).add_prefix('m_')
     metrics2 = metrics2.join(metrics['topologies'])
     metrics_final = metrics2.rename(
-        columns={'m_0': 'a1', 'm_1': 'a2', 'm_2': 'p1', 'm_3': 'p2', 'm_4': 'r1', 'm_5': 'r2', 'm_6': 'mcc1',
-                 'm_7': 'mcc2'})
+        columns={'m_0': 'a1', 'm_1': 'a2', 'm_2': 'p1', 'm_3': 'p2', 'm_4': 'r1', 'm_5': 'r2', 'm_6': 'f1',
+                 'm_7': 'f2'})
 
     metrics_final.to_csv(cfg.data['data'] + '/analysis_classes.csv', index=False)
-def plot_mcc():
+def plot_f_score():
     df = pd.read_csv(cfg.data['data'] + '/analysis_pdbs.csv', sep=',', dtype={'topologies': str})
-    df_mcc = df[['mcc1', 'mcc2','topologies']]
+    df_mcc = df[['f1', 'f2','topologies']]
     df_mcc = df_mcc[df_mcc['topologies'].notna()]
     df_mcc = df_mcc[~df_mcc["topologies"].str.contains(';')]  # only 1 class
-    fig = px.scatter(df_mcc, x='mcc1', y='mcc2', color='topologies', title="Matthew's correlation coefficient",
+    fig = px.scatter(df_mcc, x='f1', y='f2', color='topologies', title="F-score",
                      height=600)
     fig.update_traces(marker={'size': 3})
     fig.update_layout(xaxis_title="rdbl1", yaxis_title="rdbl2")
-    corr, _ = pearsonr(df_mcc['mcc1'], df_mcc['mcc2'])
+    corr, _ = pearsonr(df_mcc['f1'], df_mcc['f2'])
     print('Pearsons correlation: %.3f' % corr)
 
-    fig.write_image(cfg.data['plots'] + "/mcc_topologies.png")
+    fig.write_image(cfg.data['plots'] + "/f-score_topologies.png")
 
 
 def plot_table():
@@ -443,9 +456,9 @@ def plot_matrix():
 
 def extract_particular_cases():
     df = pd.read_csv(cfg.data['data'] + '/analysis_pdbs.csv', sep=',')
-    df1 = df.loc[(df['mcc1'] == 0) & (df['mcc2'] == 0)]['PDB']
-    df2 = df.loc[(df['mcc1'] >= 0.9) & (df['mcc2'] >= 0.9)]['PDB']
-    df1.to_csv(cfg.data['data'] + '/particular_cases/mcc_0.csv', index=False)
+    df1 = df.loc[(df['f1'] < 0.5) & (df['f2'] < 0.5)]['PDB']
+    df2 = df.loc[(df['f1'] >= 0.9) & (df['f2'] >= 0.9)]['PDB']
+    df1.to_csv(cfg.data['data'] + '/particular_cases/f1_0.5.csv', index=False)
     df2.to_csv(cfg.data['data'] + '/particular_cases/mcc_0.9.csv', index=False)
     # print(df)
 
@@ -509,9 +522,9 @@ def plot_metrics_dataset():
         marker_color='#00798C'
     ))
     fig.add_trace(go.Bar(
-        y=df['mcc1'].values.tolist(),
+        y=df['f1'].values.tolist(),
         x=x,
-        name='mcc',
+        name='F-score',
         marker_color='#003D5B'
     ))
     fig.update_layout( title='RepeatsDB-lite1', width=1000)
@@ -539,9 +552,9 @@ def plot_metrics_dataset():
         marker_color='#00798C'
     ))
     fig2.add_trace(go.Bar(
-        y=df['mcc2'].values.tolist(),
+        y=df['f2'].values.tolist(),
         x=x,
-        name='mcc',
+        name='F-score',
         marker_color='#003D5B'
     ))
     fig2.update_layout(title='RepeatsDB-lite2', width=1000)
@@ -551,79 +564,95 @@ def plot_metrics_dataset():
 def plot_metrics_pdbs():
     df = pd.read_csv(cfg.data['data'] + '/analysis_pdbs.csv', sep=',', dtype={'topologies': str})
 
-    # df_plot1 = df[['a1', 'topologies']].rename(columns={"a1": "accuracy"})
-    # df_plot2 = df[['a2', 'topologies']].rename(columns={"a2": "accuracy"})
-    # df_plot1['tool'] = 'RepeatsDB-lite1'
-    # df_plot2['tool'] = 'RepeatsDB-lite2'
-    # df_final = pd.concat([df_plot1, df_plot2])
-    # df_final = df_final.sort_values(by=['topologies'], ascending=True)
-    # df_final[['class','suclass']] = df_final['topologies'].str.split('.',expand=True)
-
-    # # accuracy
-    # fig = px.box(df_final, x="topologies", y="accuracy", color='tool')
-    # fig.update_layout(width=1000)
-    # fig.write_image(cfg.data['plots'] + "/accuracy_pdbs.png")
-    # fig = px.box(df_final, x="class", y="accuracy", color='tool')
-    # fig.update_layout(width=1000)
-    # fig.write_image(cfg.data['plots'] + "/accuracy_pdbs_classes.png")
-    #
-    #
-    # # precision
-    # df_plot1 = df[['p1', 'topologies']].rename(columns={"p1": "precision"})
-    # df_plot2 = df[['p2', 'topologies']].rename(columns={"p2": "precision"})
-    # df_plot1['tool'] = 'RepeatsDB-lite1'
-    # df_plot2['tool'] = 'RepeatsDB-lite2'
-    # df_final = pd.concat([df_plot1, df_plot2])
-    # df_final = df_final.sort_values(by=['topologies'], ascending=True)
-    # df_final[['class','suclass']] = df_final['topologies'].str.split('.',expand=True)
-    #
-    #
-    #
-    #
-    # # precision
-    # fig = px.box(df_final, x="topologies", y="precision", color='tool')
-    # fig.update_layout(width=1000)
-    # fig.write_image(cfg.data['plots'] + "/precision_pdbs.png")
-    # fig = px.box(df_final, x="class", y="precision", color='tool')
-    # fig.update_layout(width=1000)
-    # fig.write_image(cfg.data['plots'] + "/precision_pdbs_classes.png")
-    #
-    # df_plot1 = df[['r1', 'topologies']].rename(columns={"r1": "recall"})
-    # df_plot2 = df[['r2', 'topologies']].rename(columns={"r2": "recall"})
-    # df_plot1['tool'] = 'RepeatsDB-lite1'
-    # df_plot2['tool'] = 'RepeatsDB-lite2'
-    # df_final = pd.concat([df_plot1, df_plot2])
-    # df_final = df_final.sort_values(by=['topologies'], ascending=True)
-    # df_final[['class','suclass']] = df_final['topologies'].str.split('.',expand=True)
-    #
-    # # recall
-    # fig = px.box(df_final, x="topologies", y="recall", color='tool')
-    # fig.update_layout(width=1000)
-    # fig.write_image(cfg.data['plots'] + "/recall_pdbs.png")
-    # fig = px.box(df_final, x="class", y="recall", color='tool')
-    # fig.update_layout(width=1000)
-    # fig.write_image(cfg.data['plots'] + "/recall_pdbs_classes.png")
-
-    # mcc
-    df_mcc1 = df[['mcc1', 'topologies']].rename(columns={"mcc1": "mcc"})
-    df_mcc2 = df[['mcc2', 'topologies']].rename(columns={"mcc2": "mcc"})
-    df_mcc1['tool'] = 'RepeatsDB-lite1'
-    df_mcc2['tool'] = 'RepeatsDB-lite2'
-    df_final = pd.concat([df_mcc1, df_mcc2])
+    # accuracy
+    df_plot1 = df[['a1', 'topologies']].rename(columns={"a1": "accuracy"})
+    df_plot2 = df[['a2', 'topologies']].rename(columns={"a2": "accuracy"})
+    df_plot1['tool'] = 'RepeatsDB-lite1'
+    df_plot2['tool'] = 'RepeatsDB-lite2'
+    df_final = pd.concat([df_plot1, df_plot2])
     df_final = df_final.sort_values(by=['topologies'], ascending=True)
     df_final[['class','suclass']] = df_final['topologies'].str.split('.',expand=True)
 
-    # mcc by method
-    fig = px.box(df_final, x="tool", y="mcc")
-    fig.write_image(cfg.data['plots'] + "/mcc_by_method.png")
+
+    fig = px.box(df_final, x="topologies", y="accuracy", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/accuracy_pdbs.png")
+    fig = px.box(df_final, x="class", y="accuracy", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/accuracy_pdbs_classes.png")
 
 
-    # fig = px.box(df_final, x="topologies", y="mcc", color='tool')
-    # fig.update_layout(width=1000)
-    # fig.write_image(cfg.data['plots'] + "/mcc_pdbs.png")
-    # fig = px.box(df_final, x="class", y="mcc", color='tool')
-    # fig.update_layout(width=1000)
-    # fig.write_image(cfg.data['plots'] + "/mcc_pdbs_classes.png")
+    # precision
+    df_plot1 = df[['p1', 'topologies']].rename(columns={"p1": "precision"})
+    df_plot2 = df[['p2', 'topologies']].rename(columns={"p2": "precision"})
+    df_plot1['tool'] = 'RepeatsDB-lite1'
+    df_plot2['tool'] = 'RepeatsDB-lite2'
+    df_final = pd.concat([df_plot1, df_plot2])
+    df_final = df_final.sort_values(by=['topologies'], ascending=True)
+    df_final[['class','suclass']] = df_final['topologies'].str.split('.',expand=True)
+
+
+    fig = px.box(df_final, x="topologies", y="precision", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/precision_pdbs.png")
+    fig = px.box(df_final, x="class", y="precision", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/precision_pdbs_classes.png")
+
+    # recall
+    df_plot1 = df[['r1', 'topologies']].rename(columns={"r1": "recall"})
+    df_plot2 = df[['r2', 'topologies']].rename(columns={"r2": "recall"})
+    df_plot1['tool'] = 'RepeatsDB-lite1'
+    df_plot2['tool'] = 'RepeatsDB-lite2'
+    df_final = pd.concat([df_plot1, df_plot2])
+    df_final = df_final.sort_values(by=['topologies'], ascending=True)
+    df_final[['class','suclass']] = df_final['topologies'].str.split('.',expand=True)
+
+
+    fig = px.box(df_final, x="topologies", y="recall", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/recall_pdbs.png")
+    fig = px.box(df_final, x="class", y="recall", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/recall_pdbs_classes.png")
+
+
+    # recall
+    df_plot1 = df[['r1', 'topologies']].rename(columns={"r1": "recall"})
+    df_plot2 = df[['r2', 'topologies']].rename(columns={"r2": "recall"})
+    df_plot1['tool'] = 'RepeatsDB-lite1'
+    df_plot2['tool'] = 'RepeatsDB-lite2'
+    df_final = pd.concat([df_plot1, df_plot2])
+    df_final = df_final.sort_values(by=['topologies'], ascending=True)
+    df_final[['class','suclass']] = df_final['topologies'].str.split('.',expand=True)
+
+
+    fig = px.box(df_final, x="topologies", y="recall", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/recall_pdbs.png")
+    fig = px.box(df_final, x="class", y="recall", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/recall_pdbs_classes.png")
+
+    # F score
+    df_f1 = df[['f1', 'topologies']].rename(columns={"f1": "f-score"})
+    df_f2 = df[['f2', 'topologies']].rename(columns={"f2": "f-score"})
+    df_f1['tool'] = 'RepeatsDB-lite1'
+    df_f2['tool'] = 'RepeatsDB-lite2'
+    df_final = pd.concat([df_f1, df_f2])
+    df_final = df_final.sort_values(by=['topologies'], ascending=True)
+    df_final[['class','suclass']] = df_final['topologies'].str.split('.',expand=True)
+
+    fig = px.box(df_final, x="topologies", y="f-score", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/f-score_pdbs.png")
+    fig = px.box(df_final, x="class", y="f-score", color='tool')
+    fig.update_layout(width=1000)
+    fig.write_image(cfg.data['plots'] + "/f-score_pdbs_classes.png")
+
+    # f1 by method
+    fig = px.box(df_final, x="tool", y="f-score")
+    fig.write_image(cfg.data['plots'] + "/f-score_by_method.png")
 
 
 
@@ -636,7 +665,7 @@ if __name__ == '__main__':
     # create_input_txt()
 
     # get info such as number of pdb, units...
-    table_class_topology()
+    # table_class_topology()
     # residues_count()
 
     # parsing curated pdbs and predictions into dictionaries have the same format
@@ -654,19 +683,19 @@ if __name__ == '__main__':
 
     # STATISTICS
     # # Dataset level
-    # calculate accuracy, precision, recall - all residues
+    # calculate balanced accuracy, precision, recall, F score - all residues
     # Barplot
     # calc_fractions_dataset()
     # plot_metrics_dataset()
 
 
-    # # calculate accuracy, precision, recall - each PDBs
+    # # calculate balanced accuracy, precision, recall, F score - each PDBs
     # calc_fractions_pdbs()
     # plot_metrics_pdbs()
-    # plot_mcc()
+    # plot_f_score()
 
 
-    # extract_particular_cases()
+    extract_particular_cases()
 
 
     # a general  overview

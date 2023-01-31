@@ -7,8 +7,8 @@ from sklearn import preprocessing
 
 def unit_length():
     c = functions.parse_curated_to_dict()
-    p1 = functions.parse_predicted1_to_dict()
-    p2 = functions.parse_predicted2_to_dict()
+    p1 = functions.parse_predicted1_to_dict(cfg.data['data'] + '/rpdblite1_predictions.tsv')
+    p2 = functions.parse_predicted2_to_dict(cfg.data['data'] + '/rpdblite2_predictions.csv')
 
     binary = pd.read_csv(cfg.data['data'] + '/binary_pdb.csv', sep=',', dtype={'pdb_residue_id': str})
     data = {}

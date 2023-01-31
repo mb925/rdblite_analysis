@@ -5,7 +5,8 @@ absolute = absolute + '/'
 
 data = {'data': absolute + 'data',
         'plots': absolute + 'plots',
-        'units': absolute + 'plots/units'
+        'units': absolute + 'plots/units',
+        'cases': absolute + 'data/particular_cases'
 }
 # Define Mongo configuration
 db_host = '172.21.2.89'

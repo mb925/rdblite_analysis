@@ -1,4 +1,4 @@
-import math
+from functools import reduce
 from scipy.stats import pearsonr
 import numpy as np
 import plotly.graph_objects as go
@@ -17,7 +17,8 @@ def create_input_txt():
     data = json.load(f)
     pdb_list = []
     for i in data:
-
+        if i['repeatsdb_id'].startswith('4acqu') or i['repeatsdb_id'] == '5b7oA': # excluding obsoleted PDBs
+            continue
         if i['reviewed'] == True:
             print(i['reviewed'])
             pdb_list.append(i['repeatsdb_id'])
@@ -30,8 +31,12 @@ def create_input_txt():
         for el in pdb_list:
             the_file.write(el[0:4] + ' ' + el[4] + '\n')
 
-
-
+def create_input_negatives():
+    df = pd.read_csv(cfg.data['data'] + '/non_trp_pdbchains.tsv', sep='\t')
+    df = df.drop(columns=["UniProtID"])
+    df['pdb_id'], df['pdb_chain'] = df['pdb_chain'].str[4:], df['pdb_chain'].str[:4]
+    df.to_csv(cfg.data['data'] + "/input_negatives.txt", index=False, sep=' ')
+    print(df)
 def table_class_topology():
 
     f = open(cfg.data['data'] + '/entries.json')
@@ -42,11 +47,11 @@ def table_class_topology():
     data = pd.merge(data, pdbs_list, on=['pdb_id', 'pdb_chain'], how='right')
 
     # pdb chains
-    pdbs_top = data.groupby(['repeatsdb_id','class_topology'])['class_topology'].size().reset_index(name='counts')
-    pdbs_top = pdbs_top.groupby(['class_topology']).size().reset_index(name='counts')
+    pdbs_top = data.groupby(['repeatsdb_id','class_topology'])['class_topology'].size().reset_index(name='# of PDB chains')
+    pdbs_top = pdbs_top.groupby(['class_topology']).size().reset_index(name='# of PDB chains')
     pdbs_top = pdbs_top.append(pdbs_top.sum(numeric_only=True), ignore_index=True).fillna('Total')
-    pdbs_cl = data.groupby(['repeatsdb_id','class'])['class'].size().reset_index(name='counts')
-    pdbs_cl = pdbs_cl.groupby(['class']).size().reset_index(name='counts')
+    pdbs_cl = data.groupby(['repeatsdb_id','class'])['class'].size().reset_index(name='# of PDB chains')
+    pdbs_cl = pdbs_cl.groupby(['class']).size().reset_index(name='# of PDB chains')
     pdbs_cl = pdbs_cl.append(pdbs_cl.sum(numeric_only=True), ignore_index=True).fillna('Total')
 
     # regions
@@ -65,19 +70,20 @@ def table_class_topology():
     units_cl = units_cl.append(units_cl.sum(numeric_only=True), ignore_index=True).fillna('Total')
 
     # avg_units_len
-    avg_units_top = units.groupby(['class_topology'])['region_average_unit_length'].mean().astype(int).reset_index(name='avg_units')
-    avg_units_top = avg_units_top.append(avg_units_top.mean().astype(int), ignore_index=True).fillna('Total')
-    avg_units_cl = units.groupby(['class'])['region_average_unit_length'].mean().astype(int).reset_index(name='avg_units')
-    avg_units_cl = avg_units_cl.append(avg_units_cl.mean().astype(int), ignore_index=True).fillna('Total')
+    avg_units_top = units.groupby(['class_topology'])['region_average_unit_length'].mean().round(2).reset_index(name='avg_units')
+    avg_units_top = avg_units_top.append(avg_units_top.mean().round(2), ignore_index=True).fillna('Total')
+    avg_units_cl = units.groupby(['class'])['region_average_unit_length'].mean().round(2).reset_index(name='avg_units')
+    avg_units_cl = avg_units_cl.append({'class': 'Total', 'avg_units': avg_units_cl['avg_units'].mean().round(2)}, ignore_index=True)
+
 
     # std
-    std_units_top = units.groupby(['class_topology'])['region_average_unit_length'].std().astype(int).reset_index(
+    std_units_top = units.groupby(['class_topology'])['region_average_unit_length'].std().round(2).reset_index(
         name='std_units')
-    std_units_top = std_units_top.append(std_units_top.mean().astype(int), ignore_index=True).fillna('Total')
+    std_units_top = std_units_top.append({'class_topology': 'Total', 'std_units': std_units_top['std_units'].mean().round(2)}, ignore_index=True)
 
-    std_units_cl = units.groupby(['class'])['region_average_unit_length'].std().astype(int).reset_index(
+    std_units_cl = units.groupby(['class'])['region_average_unit_length'].std().round(2).reset_index(
         name='std_units')
-    std_units_cl = std_units_cl.append(std_units_cl.mean().astype(int), ignore_index=True).fillna('Total')
+    std_units_cl = std_units_cl.append({'class': 'Total', 'std_units': std_units_top['std_units'].mean().round(2)}, ignore_index=True).fillna('Total') # todo append total
 
     # uniprot
     uniprot = pd.read_csv(cfg.data['data'] + '/pdb_chain_uniprot.tsv',  sep='\t', header=1, index_col='SP_PRIMARY').reset_index()
@@ -92,30 +98,11 @@ def table_class_topology():
     uniprot_cl = uniprot_cl.groupby(['class'])['class'].size().reset_index(name='uniprot_counts')
     uniprot_cl = uniprot_cl.append(uniprot_cl.sum(numeric_only=True), ignore_index=True).fillna('Total')
 
+    class_table = reduce(lambda x, y: pd.merge(x, y, on='class', how='outer'), [pdbs_cl, regions_cl, units_cl, avg_units_cl, std_units_cl, uniprot_cl])
+    topology_table = reduce(lambda x, y: pd.merge(x, y, on='class_topology', how='outer'), [pdbs_top, regions_top, units_top, avg_units_top, std_units_top, uniprot_top])
 
-    fig = go.Figure(data=[go.Table(header=dict(values=['Topology', '# of PDB chains', '# regions', '#units', 'average units lenght', 'SD length', '# uniprots']),
-                                   cells=dict(values=[pdbs_top['class_topology'].values.tolist(),
-                                                      pdbs_top['counts'].values.tolist(),
-                                                      regions_top['regions_count'].values.tolist(),
-                                                      units_top['units_count'].values.tolist(),
-                                                      avg_units_top['avg_units'].values.tolist(),
-                                                      std_units_top['std_units'].values.tolist(),
-                                                      uniprot_top['uniprot_counts'].values.tolist()]
-                                              ))
-                          ])
-    fig.update_layout(height=700)
-    fig_classes = go.Figure(data=[go.Table(header=dict(values=['Class', '# of PDB chains', '# regions', '#units', 'average units lenght', 'SD length', '# uniprots']),
-                                   cells=dict(values=[pdbs_cl['class'].values.tolist(),
-                                                      pdbs_cl['counts'].values.tolist(),
-                                                      regions_cl['regions_count'].values.tolist(),
-                                                      units_cl['units_count'].values.tolist(),
-                                                      avg_units_cl['avg_units'].values.tolist(),
-                                                      std_units_cl['std_units'].values.tolist(),
-                                                      uniprot_cl['uniprot_counts'].values.tolist()
-                                                      ]))
-                          ])
-    fig.write_image(cfg.data['plots'] + "/topologies_count.png")
-    fig_classes.write_image(cfg.data['plots'] + "/classes_count.png")
+    topology_table.to_csv(cfg.data['data'] + "/topologies_count.csv")
+    class_table.to_csv(cfg.data['data'] + "/classes_count.csv")
     print(pdbs_top)
 
 def residues_count():
@@ -135,7 +122,7 @@ def residues_count():
     ))
     fig.add_trace(go.Bar(
         y=['RepeatsDB-lite 2 TRP', 'RepeatsDB-lite 1 TRP', 'Curated TRP'],
-        x=[ len(data.loc[data['RDB2'] == 0]), len(data.loc[data['RDB1'] == 0]), not_repeated],
+        x=[len(data.loc[data['RDB2'] == 0]), len(data.loc[data['RDB1'] == 0]), not_repeated],
         name='Not repeated',
         orientation='h',
         marker=dict(
@@ -153,13 +140,15 @@ def parse_curated_to_dict():
     f = open(cfg.data['data'] + '/entries.json')
     data = json.load(f)
     for i in data:
+        if i['repeatsdb_id'].startswith('4acqu') or i['repeatsdb_id'] == '5b7oA': # excluding obsoleted PDBs
+            continue
         if i['reviewed'] == True:
             if i["repeatsdb_id"] in dict_curated:
                 dict_curated[i["repeatsdb_id"]].append([i['start'], i['end']])
             if i["repeatsdb_id"] not in dict_curated:
                 dict_curated[i["repeatsdb_id"]] = []
                 dict_curated[i["repeatsdb_id"]].append([i['start'], i['end']])
-
+    print(dict_curated['4acqA'])
     return dict_curated
 
 
@@ -183,10 +172,10 @@ def parse_regions_to_dict():
     return dict_regions
 
 
-def parse_predicted2_to_dict():
+def parse_predicted2_to_dict(f):
     print('predicted dict')
     dict_predicted = {}
-    data = pd.read_csv(cfg.data['data'] + '/rpdblite2_predictions.csv', sep=',')
+    data = pd.read_csv(f, sep=',')
 
     for i in data.iterrows():
         if i[1][2] == 'no regions':
@@ -200,10 +189,10 @@ def parse_predicted2_to_dict():
     return dict_predicted
 
 
-def parse_predicted1_to_dict():
+def parse_predicted1_to_dict(f):
     print('predicted dict')
     dict_predicted = {}
-    df = pd.read_csv(cfg.data['data'] + '/rpdblite1_predictions.tsv', sep='\t', names=["PDB", "TYPE", "START", "END"])
+    df = pd.read_csv(f, sep='\t', names=["PDB", "TYPE", "START", "END"])
     df_intervals = df.groupby('PDB').apply(lambda x: build_intervals(x))
     for row in df_intervals:
         dict_predicted[row[0]] = row[1]
@@ -456,10 +445,9 @@ def plot_matrix():
 
 def extract_particular_cases():
     df = pd.read_csv(cfg.data['data'] + '/analysis_pdbs.csv', sep=',')
-    df1 = df.loc[(df['f1'] < 0.5) & (df['f2'] < 0.5)]['PDB']
-    df2 = df.loc[(df['f1'] >= 0.9) & (df['f2'] >= 0.9)]['PDB']
-    df1.to_csv(cfg.data['data'] + '/particular_cases/f1_0.5.csv', index=False)
-    df2.to_csv(cfg.data['data'] + '/particular_cases/mcc_0.9.csv', index=False)
+    df1 = df.loc[(df['f2'] == 0)]['PDB']
+    df1.to_csv(cfg.data['data'] + '/particular_cases/rdb1_f1_0.csv', index=False)
+
     # print(df)
 
 
@@ -663,10 +651,10 @@ if __name__ == '__main__':
     # DATASETS
     # create a list of curated pdbs
     # create_input_txt()
+    # create_input_negatives()
 
     # get info such as number of pdb, units...
     # table_class_topology()
-    # residues_count()
 
     # parsing curated pdbs and predictions into dictionaries have the same format
     # dict_curated = parse_curated_to_dict()
@@ -674,11 +662,13 @@ if __name__ == '__main__':
     # dict_predicted2 = parse_predicted2_to_dict()
     # dict_regions = parse_regions_to_dict()
     # binary file to compare each residue
-    # dict_to_binary(dict_curated, dict_predicted1, dict_predicted2, dict_regions)
+    dict_to_binary(dict_curated, dict_predicted1, dict_predicted2, dict_regions)
     # add class info
     # classes_dict = curated_to_dict_classes('class')
     # classes_dict2 = curated_to_dict_classes('class_topology')
     # add_class_to_binary(classes_dict, classes_dict2)
+    residues_count()
+
 
 
     # STATISTICS
@@ -695,7 +685,7 @@ if __name__ == '__main__':
     # plot_f_score()
 
 
-    extract_particular_cases()
+    # extract_particular_cases()
 
 
     # a general  overview

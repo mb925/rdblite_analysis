@@ -1,20 +1,22 @@
-import sys
+import main as m
 import json
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import config as cfg
+from Bio import SeqIO
+from pymongo import MongoClient
 
 def count_not_trp():
 
     rdb2 = pd.read_csv(cfg.data['data'] + '/rpdblite2_predictions.csv', sep=',')
-    rdb1 = pd.read_csv(cfg.data['data'] + '/rpdblite1_predictions.tsv', sep='\t', names=["PDB", "TYPE", "START", "END"])
     topologies = pd.read_csv(cfg.data['data'] + '/analysis_pdbs.csv', sep=',', dtype={'topologies': str})[['PDB', 'topologies']]
 
-    f1 = pd.read_csv(cfg.data['data'] + '/particular_cases/f1_0.5.csv', sep=',')
+    f1 = pd.read_csv(cfg.data['data'] + '/particular_cases/rdb1_f1_0.csv', sep=',')
     f1_merged = rdb2.merge(f1, how='right', on='PDB')
+    f1_merged_all = topologies.merge(rdb2, how='left', on='PDB')
 
-    # rdblite2
+    # rdblite2 - F score 0
     df2 = pd.DataFrame()
     detected2 = []
     for i in f1_merged.iterrows():
@@ -24,58 +26,32 @@ def count_not_trp():
             detected2.append('Detected')
     df2['Detection'] = detected2
 
-    # rdblite1
-    df1 = pd.DataFrame()
-
-    detected1 = []
-
-    rdb1_values = []
-    rdb1_pdbs = []
-    for i in rdb1.iterrows():
-        pdb = i[1]['PDB'].split("_")[0] + i[1]['PDB'].split("_")[1]
-        pdb = pdb[3:]
-        rdb1_values.append(pdb)
-
-    for mc in f1.iterrows():
-        if mc[1]['PDB'] in rdb1_values:
-            rdb1_pdbs.append(mc[1]['PDB'])
-            detected1.append('Detected')
-        else:
-            rdb1_pdbs.append(mc[1]['PDB'])
-            detected1.append('Not detected')
-
-    df1['Detection'] = detected1
-    df1['PDB'] = rdb1_pdbs
-    df1_classes = topologies.merge(df1, how='right', on='PDB')
-
-    topologies_sorted = df1_classes.sort_values(by=['topologies'], ascending=True)
-    topologies = list(topologies_sorted['topologies'].drop_duplicates().values)
-    counts = topologies_sorted.groupby(['topologies', 'Detection'])['topologies'].size().reset_index(name='counts')
-
     fig1 = go.Figure(data =[go.Table(header=dict(values=['Tool','Detected', 'Not detected', 'Total PDBs']),
-    cells = dict(values=[['Repeatsdb-lite1', 'Repeatsdb-lite2'],
-                         [len(df1.loc[df1['Detection'] == 'Detected']),
-                         len(df2.loc[df2['Detection'] == 'Detected'])],
-                         [len(df1.loc[df1['Detection'] == 'Not detected']),
-                         len(df2.loc[df2['Detection'] == 'Not detected'])],
-                          [len(df1), len(df2)]
-                          ]
+    cells = dict(values=[['Repeatsdb-lite2'],[len(df2.loc[df2['Detection'] == 'Detected'])],
+                         [len(df2.loc[df2['Detection'] == 'Not detected'])],[len(df2)]]
 
                  ))
     ])
 
-    fig1.update_layout(title="F-score < 0.5")
-    fig1.write_image(cfg.data['plots'] + "/particular_cases/f1_0.5.png")
+    fig1.update_layout(title="RDB2 F-score = 0")
+    fig1.write_image(cfg.data['plots'] + "/particular_cases/rdb2_f1_0.png")
+
+    # rdblite2 - F score all
+
+    detected2_all = []
+    for i in f1_merged_all.iterrows():
+        if i[1][2] == 'no regions':
+            detected2_all.append('Not detected')
+        else:
+            detected2_all.append('Detected')
+    f1_merged_all['Detection'] = detected2_all
+
+    topologies_sorted = f1_merged_all.sort_values(by=['topologies'], ascending=True)
+    counts = topologies_sorted.groupby(['topologies', 'Detection'])['topologies'].size().reset_index(name='counts')
 
 
-
-    fig1 = go.Figure(data=[
-        go.Bar(name='Not detected', x=topologies, y=list(counts.loc[counts['Detection'] == 'Not detected']['counts'])),
-        go.Bar(name='Detected', x=topologies, y=list(counts.loc[counts['Detection'] == 'Detected']['counts']))
-    ])
-    # Change the bar mode
-    fig1.update_layout(barmode='stack', title="F-score - Repeatsdb-lite1")
-    fig1.write_image(cfg.data['plots'] + "/particular_cases/f1_0.5 - topologies - Repeatsdb-lite1.png")
+    fig1 = px.bar(counts, x="topologies", y="counts", color="Detection", title="Detection level by topology - Repeatsdb-lite2", barmode='stack')
+    fig1.write_image(cfg.data['plots'] + "/particular_cases/detection-topologies-Repeatsdb-lite2.png")
 
 
 
@@ -149,20 +125,71 @@ def compare_classes(curated, predicted):
                 # print(list(set(set(curated[key])).intersection(set(predicted[key]))))
 
 
-def mcc_by_class():
-    tools = ['RepeatsDB-lite 1', 'RepeatsDB-lite 2']
+def dict_to_binary(d_pred1, d_pred2):
+    # EBI file parsing
+    df = pd.DataFrame()
 
-    fig = go.Figure(data=[
-        go.Bar(name='SF Zoo', x=tools, y=[20, 14]),
-        go.Bar(name='LA Zoo', x=tools, y=[12, 18])
-    ])
-    # Change the bar mode
-    fig.update_layout(barmode='stack')
-    fig.show()
+    list_negatives = pd.read_csv(cfg.data['data'] + '/input_negatives.txt', sep=' ', names=["PDB", "CHAIN"])
+
+    # Connect to mongo (BioDBs seqres)
+    client = MongoClient(cfg.db_host, cfg.db_port)
+    db = client.biodbs
+
+    for pdb in list_negatives.iterrows():
+        l = m.find_seqres(db, pdb[1]['PDB'], pdb[1]['CHAIN'])
+        pdb = pdb[1]['PDB'] + pdb[1]['CHAIN']
+        df_residues = pd.DataFrame.from_records(l)
+        if df_residues.empty:
+            print('empty ', pdb)
+            continue
+        residues = df_residues.sort_values(by=['seqres_index'], ascending=True)[
+            ['pdb_id', 'pdb_chain', 'seqres_index', 'pdb_residue_id']]
+
+        residues['CURATED'] = 0
+        residues['RDB1'] = 0
+        residues['RDB2'] = 0
+
+        if pdb in d_pred1:
+            for interval1 in d_pred1[pdb]:
+                m.fill_repeated_interval(pdb, residues, interval1, 'RDB1')
+        if pdb in d_pred2:
+            for interval2 in d_pred2[pdb]:
+                m.fill_repeated_interval(pdb, residues, interval2, 'RDB2')
+
+        df = pd.concat([df, residues])
+
+
+    df["PDB"] = df['pdb_id'] + df["pdb_chain"]
+    df.to_csv(cfg.data['cases'] + '/binary_pdb_negatives.csv', index=False)
+
+
+def create_table():
+    data = []
+    df = pd.read_csv(cfg.data['cases'] + '/binary_pdb_negatives.csv')
+    df_tn1 = len(df.loc[df['RDB1'] == 0])
+    df_fp1 = len(df.loc[df['RDB1'] == 1])
+    total_1 = df_tn1 + df_fp1
+    df_tn2 = len(df.loc[df['RDB2'] == 0])
+    df_fp2 = len(df.loc[df['RDB2'] == 1])
+    total_2 = df_tn2 + df_fp2
+    data.append(['RDBLITE1', df_tn1, df_fp1, total_1])
+    data.append(['RDBLITE2', df_tn2, df_fp2, total_2])
+    table = pd.DataFrame(data, columns=['TOOL', 'TN', 'TP', 'TOTAL'])
+    table.to_csv(cfg.data['cases'] + '/table_negatives.csv', index=False)
+    print(df_fp1)
 
 if __name__ == '__main__':
 
-    count_not_trp()
-    # mcc_by_class()
+    # count_not_trp()
     # classes_analysis()
     # plot_classes()
+
+    ## Negatives
+    # data = pd.read_csv(cfg.data['data'] + '/particular_cases/input_negatives.csv', sep=' ')
+    # data = data['PDB']
+    # data.to_csv(cfg.data['data'] + '/particular_cases/list_Ebi.csv', index=False)
+    # parse_fasta(cfg.data['data'] + '/particular_cases/ebi.fasta')
+    # dict_predicted1 = m.parse_predicted1_to_dict(cfg.data['data'] + '/rpdblite1_predictions.tsv')
+    # dict_predicted2 = m.parse_predicted2_to_dict(cfg.data['data'] + '/rpdblite2_predictions.csv')
+    # dict_to_binary(dict_predicted1, dict_predicted2)
+    create_table()
